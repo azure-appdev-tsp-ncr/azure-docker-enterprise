@@ -1,0 +1,9 @@
+---
+- name: "Is {{ docker_storage_volume }} a block device?"
+  stat:
+    path: "{{ docker_storage_volume }}"
+  register: docker_storage_volume_info
+
+- name: "Scan NVMe devices"
+  when: docker_storage_volume_info.stat.isblk is not defined or docker_storage_volume_info.stat.isblk == False
+  include_tasks: "aws_nvme.yml"

@@ -1,0 +1,90 @@
+---
+- name: "Stop and Disable Docker"
+  service:
+    name: docker
+    state: stopped
+    enabled: no
+
+- name: "Stop and Disable Containerd"
+  service:
+    name: containerd
+    state: stopped
+    enabled: no
+#
+# Remove installed versions of Docker.
+#
+- name: "Remove installed versions of Docker."
+  package:
+    name: '{{ package }}'
+    state: absent
+  with_items:
+    - docker
+    - docker-ce
+    - docker-common
+    - docker-engine
+    - docker-ee
+    - docker-ee-cli
+    - containerd.io
+  loop_control:
+    loop_var: package
+
+- name: "Reboot the machine"
+  reboot:
+    post_reboot_delay: 10
+
+#
+# It would be preferred to simply run:
+#
+# - name: Clean /var/lib/docker
+#   file:
+#     state: absent
+#     path: "/var/lib/docker"
+#
+# That doesn't work out since we can't actually delete the directory, as it's the mount point for the data volume
+#
+# Instead, let's find the subdirectories and purge those.
+#
+#
+
+- name: "Discover directories in /var/lib/docker"
+  find:
+    paths: /var/lib/docker
+    file_type: directory
+    depth: 1
+    recurse: yes
+  register: docker_directories_to_delete
+
+- name: "Remove all directories in /var/lib/docker"
+  file:
+    path: "{{ item.path }}"
+    state: absent
+  with_items: "{{ docker_directories_to_delete.files }}"
+
+- name: "Discover directories in /var/lib/kubelet"
+  find:
+    paths: /var/lib/kubelet
+    file_type: directory
+    depth: 1
+    recurse: yes
+  register: kubelet_directories_to_delete
+
+- name: "Remove all directories in /var/lib/kubelet"
+  file:
+    path: "{{ item.path }}"
+    state: absent
+  with_items: "{{ kubelet_directories_to_delete.files }}"
+
+- name: "Remove /etc/cni"
+  file:
+    path: "/etc/cni"
+    state: absent
+
+- name: "Remove /opt/cni"
+  file:
+    path: "/opt/cni"
+    state: absent
+
+- name: "Remove /opt/containerd"
+  file:
+    path: "/opt/containerd"
+    state: absent

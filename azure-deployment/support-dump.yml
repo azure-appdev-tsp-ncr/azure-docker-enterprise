@@ -1,0 +1,140 @@
+---
+- name: "Support dump for the local DCI host."
+  gather_facts: false
+  hosts: localhost
+  tasks:
+  - set_fact:
+      dump_folder: "{{ playbook_dir }}/docker-support"
+  - name: Remove the old dump_folder
+    file:
+      path: "{{ dump_folder }}"
+      state: absent
+  - name: Create a new folder
+    file:
+      path: "{{ dump_folder }}"
+      state: directory
+  - name: "Collect environment."
+    shell: |
+      ( printf "===== environment =====\n"
+      env | grep -E '^(DCI|TF|ANSIBLE|DOCKER|KUBE)'
+      printf "\n===== terraform version =====\n"
+      if command -v terraform &> /dev/null; then  terraform --version
+      else echo "Terraform not found"; fi
+      printf "\n===== ansible version =====\n"
+      if command -v ansible &> /dev/null; then ansible --version
+      else echo "Ansible not found"; fi
+      if command -v diver &> /dev/null; then diver version
+      else echo "diver not found"; fi
+      printf "\n===== vault version =====\n"
+      if command -v vault &> /dev/null; then vault --version
+      else echo "Vault not found"; fi
+      printf "\n===== docker version =====\n"
+      if command -v docker &> /dev/null; then docker --version
+      else echo "Docker not found"; fi
+      printf "\n===== docker images =====\n"
+      if command -v docker &> /dev/null; then docker image ls --filter "reference=docker*/certified-infrastructure"
+      else echo "Docker not found"; fi ) > "{{ dump_folder }}/localhost-info.txt"
+  - name: "Collect files."
+    failed_when: false
+    shell: >
+      cp "{{ playbook_dir }}/terraform.tfvars" "{{ dump_folder }}"
+      cp "{{ playbook_dir }}/inventory/1.hosts" "{{ dump_folder }}"
+  - name: "Sanitize data files."
+    failed_when: false
+    with_nested:
+      - - 'localhost-info.txt'
+        - 'terraform.tfvars'
+        - '1.hosts'
+      - - '^(.*PASSWORD.*=).*$'
+        - '^(.*password.*=).*$'
+        - '^(.*docker_ee_subscriptions_.*=).*$'
+        - '^(.*aws_access_key.*=).*$'
+        - '^(.*aws_secret_key.*=).*$'
+        - '^(.*key_name.*=).*$'
+        - '^(.*client_id.*=).*$'
+        - '^(.*client_secret.*=).*$'
+        - '^(.*subscription_id.*=).*$'
+        - '^(.*tenant_id.*=).*$'
+        - '^(.*credentials.*=).*$'
+        - '^(.*vsphere_user.*=).*$'
+        - '^(.*linux_user.*=).*$'
+        - '^(.*private_key.*=).*$'
+    replace:
+      path: "{{ dump_folder }}/{{ item[0] }}"
+      regexp: "{{ item[1] }}"
+      replace: '\1 ********'
+
+# Make sure python is installed
+- name: "Install Ansible requirements (Python)"
+  hosts: all:!windows
+  strategy: free
+  gather_facts: False
+  roles:
+  - role: ansible-requirements
+  tags: ['always']
+
+- name: "Is Docker installed?"
+  hosts: all:!windows
+  gather_facts: false
+  tasks:
+  - name: "Check for docker"
+    shell: command -v docker
+    register: docker_installed
+  - name: "Get installed version"
+    when: docker_installed.rc == 0
+    block:
+    - set_fact:
+        docker_version_json: "{{ inventory_hostname }}.docker_version.json"
+    - name: "Checking docker version"
+      shell: docker version --format '{%raw%}{{json .}}{%endraw%}' > "{{ docker_version_json }}"
+    - name: "Retrieve the version blob"
+      fetch:
+        src: "{{ docker_version_json }}"
+        dest: "{{ playbook_dir }}/docker-support/{{ docker_version_json }}"
+        flat: true
+
+- name: "Support dump from all of the Linux cluster hosts."
+  hosts: all:!windows
+  gather_facts: false
+  ignore_unreachable: true
+  ignore_errors: true
+  tasks:
+  - name: "Collect a Support Dump on {{ inventory_hostname }}"
+    when: docker_installed.rc == 0
+    block:
+    - name: "Create a name for the support dump"
+      shell: 'echo docker-support-$(hostname)-$(date +%Y%m%d-%H_%M_%S).tar.gz'
+      register: filename
+    - set_fact:
+        dump_file_name: "{{ filename.stdout_lines[0] }}"
+    - name: "Make sure you have the UCP container for {{ docker_ucp_version }}"
+      shell: >
+        docker pull
+        {{ docker_ucp_image_repository }}/ucp:{{ docker_ucp_version }}
+    - name: "Create a support dump on the hosts"
+      shell: >
+        docker container run
+        --rm
+        --name ucp-dump
+        -v /var/run/docker.sock:/var/run/docker.sock
+        --log-driver none
+        {{ docker_ucp_image_repository }}/ucp:{{ docker_ucp_version }}
+        support
+        {% if use_dev_version | default(False) %}
+        --image-version "dev:"
+        {% endif %}
+        > {{ dump_file_name }}
+    - name: "Retrieve the support dump"
+      fetch:
+        src: "{{ dump_file_name }}"
+        dest: "{{ playbook_dir }}/docker-support/{{ dump_file_name }}"
+        flat: true
+
+- name: "Create combined support dump."
+  hosts: localhost
+  gather_facts: false
+  tasks:
+  - name: "Create archive file."
+    archive:
+      dest: "{{ playbook_dir }}/docker-support.tar.gz"
+      path: "{{ playbook_dir }}/docker-support"

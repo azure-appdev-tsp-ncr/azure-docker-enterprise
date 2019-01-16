@@ -1,0 +1,53 @@
+---
+# Shell local actions will only work on unix-based systems.
+# Is it a real issue?
+- name: "Get stack version."
+  local_action: shell cat "{{ playbook_dir }}/VERSION"
+  register: version
+  failed_when: False
+
+- name: "Get stack revision."
+  local_action: shell cat "{{ playbook_dir }}/COMMIT"
+  register: commit
+  failed_when: False
+
+- set_fact:
+    dsinfo_content: |
+      - Certified Infrastructure Info:
+        - General:
+          - stack: {{ infra_stack | default('unknown') }}
+          - version: {{ version.stdout }}
+          - revision: {{ commit.stdout }}
+
+        - Ansible:
+          - version: {{ ansible_version.string }}
+
+        - Engine:
+          - docker_ee_version: {{ docker_ee_version | default('latest') }}
+
+        - UCP:
+          - docker_ucp_version: {{ docker_ucp_version | default('latest') }}
+          - docker_ucp_lb: {{ docker_ucp_lb | default('none') }}
+
+        - DTR:
+          - docker_dtr_version: {{ docker_dtr_version | default('latest') }}
+          - docker_dtr_replica_id: {{ docker_dtr_replica_id | default('generated') }}
+          - docker_dtr_lb: {{ docker_dtr_lb | default('none') }}
+
+        - Cloudstore:
+          - cloudstor_plugin_options: {{ cloudstor_plugin_options | default('none') }}
+
+        - Miscellaneous:
+          - docker_storage_volume: {{ docker_storage_volume | default('none') }}
+
+- name: "Create the DCI deployment info file."
+  when: ansible_os_family != 'Windows'
+  copy:
+    content: "{{ dsinfo_content }}"
+    dest: '/etc/dci_deployment.info'
+
+- name: "Create the DCI deployment info file."
+  when: ansible_os_family == 'Windows'
+  win_copy:
+    content: "{{ dsinfo_content }}"
+    dest: 'C:\dci_deployment.info'

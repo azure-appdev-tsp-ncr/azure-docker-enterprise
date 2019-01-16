@@ -1,0 +1,19 @@
+---
+- name: "Set facts"
+  set_fact:
+    docker_primary_ucp_ip_address: "{{ hostvars[groups['linux-ucp-manager-primary'][0]]['ansible_host'] }}"
+
+#This will only work if publically accessible
+- name: "Get Auth Token"
+  uri:
+    url: "https://{{docker_primary_ucp_ip_address}}/auth/login"
+    method: POST
+    validate_certs: no
+    body:
+      username: "{{docker_ucp_admin_username}}"
+      password: "{{docker_ucp_admin_password}}"
+    body_format: json
+    headers:
+      Content-Type: "application/json"
+    return_content: yes
+  register: json_response

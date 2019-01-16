@@ -1,0 +1,12 @@
+---
+- name: "Get Auth Token"
+  hosts: localhost
+  gather_facts: false
+  roles:
+  - {role: docker-ucp, docker_ucp_role_mode: "auth" }
+
+- name: "Push Config"
+  hosts: localhost
+  gather_facts: false
+  roles:
+  - { role: docker-ucp, docker_ucp_role_mode: "push-config"}

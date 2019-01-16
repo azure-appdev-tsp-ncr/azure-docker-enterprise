@@ -1,0 +1,14 @@
+---
+- name: "Set facts"
+  set_fact:
+    docker_primary_ucp_ip_address: "{{ hostvars[groups['linux-ucp-manager-primary'][0]]['ansible_host'] }}"
+
+- name: "Get UCP config"
+  uri:
+    url: "https://{{docker_primary_ucp_ip_address}}/api/ucp/config-toml"
+    method: GET
+    validate_certs: no
+    headers: 
+      Authorization: "Bearer {{json_response.json.auth_token}}"
+    body_format: json
+    dest: "./ucp-config.toml"

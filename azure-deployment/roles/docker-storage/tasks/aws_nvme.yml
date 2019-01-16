@@ -1,0 +1,29 @@
+---
+- name: "Install nvme-cli"
+  package:
+    name: "nvme-cli"
+    state: present
+
+- name: "Scan NVME devices"
+  register: scan_results
+  become: True
+  shell: |
+    DOCKER_STORAGE_VOLUME="$(echo {{docker_storage_volume}} | sed 's/\/dev\///g')";
+    for eachDisk in $(seq 0 26); do
+      NVME_MOUNTPOINT="/dev/nvme${eachDisk}n1"
+      if [ -b "${NVME_MOUNTPOINT}" ] ; then
+        AWS_EBS_MOUNTPOINT=$(nvme id-ctrl -v "${NVME_MOUNTPOINT}" \
+        | grep 0000: \
+        | awk '{print $18}' \
+        | sed 's/\.*\"//g');
+        if [ ${AWS_EBS_MOUNTPOINT} = "${DOCKER_STORAGE_VOLUME}" ] ; then
+          echo ${NVME_MOUNTPOINT}
+          break;
+        fi;
+      fi;
+    done;
+
+- name: "Update docker_storage_volume to be {{scan_results.stdout_lines[0] }}"
+  set_fact:
+    docker_storage_volume: "{{ scan_results.stdout_lines[0] }}"
+    aws_nvme_ebs_present: True

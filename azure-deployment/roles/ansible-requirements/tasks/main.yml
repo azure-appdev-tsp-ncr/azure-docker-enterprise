@@ -1,0 +1,86 @@
+- name: Check if python and pip are present
+  raw: command -v python && command -v pip
+  failed_when: False
+  register: has_python_and_pip
+
+- name: "Install python and pip"
+  when: has_python_and_pip.rc != 0 and not enable_offline_install
+  block:
+  # Debian/Ubuntu.
+  - name: Check if apt-get is installed.
+    raw: apt-get --version
+    failed_when: False
+    register: has_apt
+  - name: "apt-get"
+    when: has_apt.rc == 0
+    block:
+    - name: Install python2 [apt-get].
+      raw: apt-get update -q && apt-get install -qy python-minimal python-pip
+      register: installed_via_apt
+
+  # RHEL/CentOS/Oracle.
+  - name: Check if yum is installed.
+    raw: yum --version
+    when: installed_via_apt.get('skipped')
+    register: has_yum
+    failed_when: False
+
+  - name: "yum"
+    when: installed_via_apt.get('skipped') and has_yum.rc == 0
+    block:
+    - name: "Azure updates for RHUI"
+      when: infra_stack == "azure"
+      raw: >
+        if [ 'rhel' = "$(cat /etc/os-release | grep ID=\"rhel\" | awk -F= '{print $2}' | xargs printf '%s'  )" ]; then
+          curl -o azureclient.rpm https://rhui-1.microsoft.com/pulp/repos/microsoft-azure-rhel7/rhui-azure-rhel7-2.2-74.noarch.rpm;
+          rpm -U azureclient.rpm;
+          yum clean all;
+        fi;
+    - name: Clean yum
+      raw: yum clean all
+    - name: Install yum-utils.
+      raw: "yum install -y yum-utils"
+    - name: Install epel-release.
+      raw: "yum install -y epel-release"
+      failed_when: False
+    - name: Enable developer EPEL (pip).
+      raw: yum-config-manager --enable ol7_developer_EPEL
+      failed_when: False
+    # yum behavior is sometime surprising.
+    # If you run `yum install a b` and `a` exists but `b` doesn't, no errors are reported.
+    # However, `yum install b` will fail.
+    # We can use that 'feature' to enumerate multiple naming format for the
+    # package pip e.g. (python-pip and rh-python27-python-pip)
+    - name: Install python2 [yum].
+      raw: yum install -y python python-pip rh-python27-python-pip
+      register: installed_via_yum
+      when: has_yum.rc == 0 and installed_via_apt.get('skipped')
+    - name: Ensure pip has been installed properly.
+      raw: pip --version
+      failed_when: False
+      register: has_pip
+    - name: Install pip manually
+      raw: curl --tlsv1 https://bootstrap.pypa.io/get-pip.py | python
+      when: has_pip.rc != 0
+
+  # SLES.
+  - name: Check if zypper is installed.
+    raw: zypper --version
+    when: installed_via_apt.get('skipped') and installed_via_yum.get('skipped')
+    failed_when: False
+    register: has_zypper
+  - name: Using Zypper
+    when: installed_via_apt.get('skipped') and installed_via_yum.get('skipped') and has_zypper.rc == 0
+    block:
+    - name: Installing python
+      raw: zypper -i install -f -y -n python python-pip python2-pip
+      register: installed_via_zypper
+    - name: Installing python-xml
+      raw: zypper install -y -n python-xml
+    - name: Ensure pip has been installed properly.
+      raw: pip --version
+      failed_when: False
+      register: has_pip
+    - name: Install pip manually
+      raw: curl --tlsv1 https://bootstrap.pypa.io/get-pip.py | python
+      when: has_pip.rc != 0

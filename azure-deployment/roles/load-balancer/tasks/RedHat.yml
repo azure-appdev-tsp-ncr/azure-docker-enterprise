@@ -1,0 +1,19 @@
+---
+
+- name: "Check for firewalld."
+  shell: "systemctl is-active firewalld --quiet"
+  register: firewalld_active_result
+  failed_when: False
+
+- name: "Update firewall (firewalld)."
+  firewalld:
+    port: "{{ item }}/tcp"
+    permanent: true
+    state: enabled
+  with_items: "{{ [ 8181 ] | union(ports) | union(ssl_ports) }}"
+
+- name: "Restart Firewalld Service"
+  service:
+    name: firewalld
+    state: restarted
+  when: firewalld_active_result

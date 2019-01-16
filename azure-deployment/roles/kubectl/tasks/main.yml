@@ -1,0 +1,59 @@
+---
+- name: "Extract Major.Minor.Patch from {{ docker_ucp_version }}"
+  set_fact:
+    ucp_version_semver_major: "{{ docker_ucp_version | regex_replace('^([0-9]+)?\\.?([0-9]+)?\\.?([0-9]+)?(.*)$', '\\1') | default('0') }}"
+    ucp_version_semver_minor: "{{ docker_ucp_version | regex_replace('^([0-9]+)?\\.?([0-9]+)?\\.?([0-9]+)?(.*)$', '\\2') | default('0') }}"
+    ucp_version_semver_patch: "{{ docker_ucp_version | regex_replace('^([0-9]+)?\\.?([0-9]+)?\\.?([0-9]+)?(.*)$', '\\3') | default('0') }}"
+  when: docker_ucp_version != "latest"
+- name: "Produce a few variations"
+  set_fact:
+    ucp_version_semver_x:     "{{ ( docker_ucp_version == 'latest') | ternary( 'latest', 'v' + ucp_version_semver_major + '.0.0' ) }}"
+    ucp_version_semver_x_y:   "{{ ( docker_ucp_version == 'latest') | ternary( 'latest', 'v' + ucp_version_semver_major + '.' + ucp_version_semver_minor + '.0' ) }}"
+    ucp_version_semver_x_y_z: "{{ ( docker_ucp_version == 'latest') | ternary( 'latest', 'v' + ucp_version_semver_major + '.' + ucp_version_semver_minor + '.' + ucp_version_semver_patch ) }}"
+- name: "Determine kubectl"
+  set_fact:
+    kubectl_version: "{{ kubectl_version_for_ucp[ ucp_version_semver_x_y_z ] | default ( kubectl_version_for_ucp[ ucp_version_semver_x_y ] ) |  default ( kubectl_version_for_ucp[ ucp_version_semver_x ]) | default ('') }}"
+
+- name: "Get latest kubectl for unknown UCP"
+  when: kubectl_version == ""
+  block:
+  - name: Lookup latest stable
+    get_url:
+      url: "https://storage.googleapis.com/kubernetes-release/release/stable.txt"
+      dest: "kubectl.stable.txt"
+      mode: "0644"
+  - name: Read stable version file
+    shell: cat kubectl.stable.txt
+    register: kubectl_stable_version
+  - name: Put version in a variable
+    set_fact:
+      kubectl_version: "{{ kubectl_stable_version.stdout_lines[0] }}"
+
+- name: "Check for kubectl"
+  stat:
+    path: /usr/local/bin/kubectl
+  register: kubectl
+  when: >
+    kubectl_version is defined
+
+- name: "Check for kubectl"
+  stat:
+    path: /usr/local/bin/kubectl.{{kubectl_version}}
+  register: kubectl_precise
+  when:
+    kubectl_version is defined
+
+- name: "Install Kubectl"
+  when: kubectl_version is defined and (kubectl.stat.exists == False or kubectl_precise.stat.exists == False)
+  get_url:
+    url: "https://storage.googleapis.com/kubernetes-release/release/{{kubectl_version}}/bin/linux/amd64/kubectl"
+    dest: "/usr/local/bin/kubectl.{{kubectl_version}}"
+    mode: "0755"
+
+- name: "Symlink up the latest kubectl"
+  file:
+    src: "/usr/local/bin/kubectl.{{kubectl_version}}"
+    path: /usr/local/bin/kubectl
+    state: link
+
+

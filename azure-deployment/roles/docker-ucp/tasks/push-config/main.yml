@@ -1,0 +1,17 @@
+---
+- name: "Set facts"
+  set_fact:
+    docker_primary_ucp_ip_address: "{{ hostvars[groups['linux-ucp-manager-primary'][0]]['ansible_host'] }}"
+
+- name: "Put UCP config"
+  uri:
+    url: "https://{{docker_primary_ucp_ip_address}}/api/ucp/config-toml"
+    method: PUT
+    validate_certs: no
+    headers:
+      Authorization: "Bearer {{json_response.json.auth_token}}"
+    body_format: json
+    src: "./ucp-config.toml"
+  register: upload_result
+  failed_when: upload_result.status != 200
+  changed_when: upload_result.status == 200

@@ -1,0 +1,13 @@
+---
+
+- name: "Get Auth Token"
+  hosts: localhost
+  gather_facts: false
+  roles:
+  - {role: docker-ucp, docker_ucp_role_mode: "auth" }
+
+- name: "Pull Config"
+  hosts: localhost
+  gather_facts: false
+  roles:
+  - { role: docker-ucp, docker_ucp_role_mode: "pull-config"}

@@ -1,0 +1,9 @@
+---
+- import_playbook: "install-engine.yml"
+
+- name: "Initialize Swarm"
+  hosts: ucp-primary
+  gather_facts: False
+  roles:
+  - { role: docker-swarm, docker_swarm_role_mode: "init" }
+  tags: ['swarm', 'Swarm', 'managers']
